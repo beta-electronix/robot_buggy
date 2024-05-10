@@ -152,8 +152,7 @@ namespace Betaelectronix_ROBOT_BUGGY {
     let rBias = 0
     let lBias = 0
     let tTightness = 4
-    let latestBuf = pins.createBuffer(6) // Store the most recent data sent to the WS2811 driver so that we can see the latest speed settings
-    //Sound global variables
+    let latestBuf = pins.createBuffer(6) // global variable to store last speed setting
     let sirenOn = false
     //Ultrasonic global variables
     let cmDivider = ULTRASONIC_V1_DIV_CM
@@ -204,7 +203,7 @@ namespace Betaelectronix_ROBOT_BUGGY {
     //% weight=100 blockGap=8
     export function brakeLightsOff(): void {
         let brakeBuf = pins.createBuffer(6) // WS2811 ICs, each with RGB (RG = Motor, B = Brake)
-        brakeBuf = latestMotorBuf
+        brakeBuf = latestBuf
         brakeBuf[2] = 0
         brakeBuf[5] = 0
         Kitronik_WS2811.sendBuffer(brakeBuf, motorPin)
