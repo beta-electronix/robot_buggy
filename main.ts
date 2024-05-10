@@ -1,20 +1,19 @@
 /**
- * Blocks for driving the Kitronik :MOVE Motor Buggy
+ * blocks for beta-electronix robot buggy
  */
-//% weight=100 color=#00A654 icon="\uf1b9" block="MOVE Motor"
-//% groups='["Ultrasonic","Line Following","Drive", "Setup", "Motor Control"]'
-namespace Kitronik_Move_Motor {
-    //Constants for PCA9632 Driver IC
-    let CHIP_ADDR = 0x62 // CHIP_ADDR is the standard chip address for the PCA9632, datasheet refers to LED control but chip is used for PWM to motor driver
+//% weight=100 color=#00A654 icon="\uf1b9" block="ROBOT BUGGY"
+//% groups='["Ultrasound","Line Tracer","Drive", "Setup", "Motion Control"]'
+namespace Betaelectronix_ROBOT_BUGGY {
+    //Constants for the LED driver
+    let CHIP_ADDR = 0x62 // CHIP_ADDR 
     let MODE_1_REG_ADDR = 0x00 //mode 1 register address
     let MODE_2_REG_ADDR = 0x01  //mode 2 register address
     let MOTOR_OUT_ADDR = 0x08  //MOTOR output register address
-
     let MODE_1_REG_VALUE = 0x00 //setup to normal mode and not to respond to sub address
-    let MODE_2_REG_VALUE = 0x0D  //Setup to make changes on ACK, outputs set to Totem poled to drive the motor driver chip
+    let MODE_2_REG_VALUE = 0x0D  //Setup to make changes on ACK
     let MOTOR_OUT_VALUE = 0xAA  //Outputs set to be controled PWM registers
 
-    //Define of the two different values required in conversion equation for the ultrasonic to measure accurately
+    // define constants for unit conversion for the ultrasound distance measurements
     let ULTRASONIC_V1_DIV_CM = 39
     let ULTRASONIC_V2_DIV_CM = 58
     let ULTRASONIC_V1_DIV_IN = 98
@@ -28,8 +27,8 @@ namespace Kitronik_Move_Motor {
         Off = 0
     }
 
-    /* ZIPLEDS*/
-    //Well known colors for ZIP LEDs
+    /* TRI-COLOR LED*/
+    //Define LED colors in 24-bit format
     export enum ZipLedColors {
         //% block=red
         Red = 0xFF0000,
@@ -48,27 +47,24 @@ namespace Kitronik_Move_Motor {
         //% block=purple
         Purple = 0xFF00FF,
         //% block=white
-        White = 0xFFFFFF,
-        //% block=black
-        Black = 0x000000
+        White = 0xFFFFFF
     }
 
     /*MOTORS*/
-    // List of motors for the motor blocks to use. These correspond to the register offsets in the PCA9832 driver IC.
-    export enum Motors {
+    // List of motors for the motor blocks to use. 
         //% block="Left"
         MotorLeft = 0x04,
         //% block="Right"
         MotorRight = 0x02
     }
-    // Directions the motors can rotate.
+    // moving direction
     export enum MotorDirection {
         //% block="Forward"
         Forward = 1,
         //% block="Reverse"
         Reverse = 2
     }
-    // directions the :MOVE motor can drive. Implicit moving forward in the turns 
+    // enum for moving direction
     export enum DriveDirections {
         //% block="Forward"
         Forward = 1,
@@ -79,7 +75,7 @@ namespace Kitronik_Move_Motor {
         //% block="Right"
         Right = 4
     }
-    //directions the :MOVE motor can spin on the spot. 
+    //enum for spin directions 
     export enum SpinDirections {
         //%block="Left"
         Left = 3,
@@ -132,7 +128,7 @@ namespace Kitronik_Move_Motor {
         High
     }
 
-    //Pin selection from expansion pins
+    //Pin selection for servos
     export enum PinSelection
     {
         //% block="P15"
@@ -141,7 +137,7 @@ namespace Kitronik_Move_Motor {
         P16
     }
 
-    //Pin selection from expansion pins
+    //servo selection
     export enum ServoSelection
     {
         //% block="servo 1"
@@ -150,18 +146,18 @@ namespace Kitronik_Move_Motor {
         servo2
     }
 
-    let initalised = false //a flag to allow us to initialise without the user having to explicitly call the initialisation routine
-    let moveMotorVersion = 0
-    //Motor global variables to allow user to 'bias' the motors to drive the :MOVE motor in a straight line
-    let rightMotorBias = 0
-    let leftMotorBias = 0
-    let turnTightness = 4
-    let latestMotorBuf = pins.createBuffer(6) // Store the most recent data sent to the WS2811 driver so that we can see the latest speed settings
+    let init = false 
+    let mVersion = 0
+   // global variables for motor control
+    let rBias = 0
+    let lBias = 0
+    let tTightness = 4
+    let latestBuf = pins.createBuffer(6) // Store the most recent data sent to the WS2811 driver so that we can see the latest speed settings
     //Sound global variables
     let sirenOn = false
     //Ultrasonic global variables
-    let cmEquationDivider = ULTRASONIC_V1_DIV_CM
-    let inEquationDivider = ULTRASONIC_V1_DIV_IN
+    let cmDivider = ULTRASONIC_V1_DIV_CM
+    let inDivider = ULTRASONIC_V1_DIV_IN
     let triggerPin = DigitalPin.P13
     let echoPin = DigitalPin.P14
     let units = Units.Centimeters
@@ -169,89 +165,30 @@ namespace Kitronik_Move_Motor {
     let rightLfOffset = 0
     let leftLfOffset = 0
     
-    //let uBitVersion = 0
-
-   // function hardwareVersion(): number {
-    //    return uBitVersion;
-    //}
     
     /*
-	This function checks the version of :MOVE Motor PCB and carries out different setup routines depending on the version number.
-	It is called from other blocks, so never needs calling directly.
+	the setup function checkes the control board version
     */
     function setup(): void {
         let buf = pins.createBuffer(2)
         let readBuf = pins.createBuffer(1)
-        // Pin 3 toggled while Pin 12 reads the toggle - this is to determine the version of the board for which line following sensor is attached (V1.0 or V2.0)
-        basic.clearScreen()
-        led.enable(false) // Disable uBit LED display as Pin 3 controls part it
-        pins.digitalWritePin(DigitalPin.P3, 1)
-        basic.pause(100)
-        if (pins.digitalReadPin(DigitalPin.P12) == 1) {
-            pins.digitalWritePin(DigitalPin.P3, 0)
-            basic.pause(100)
-            if (pins.digitalReadPin(DigitalPin.P12) == 0) {
-                moveMotorVersion = 20
-            } else {
-                moveMotorVersion = 0 // Set to 0 as still need to identify between V1.0 and V3.1
-            }
-        }
         led.enable(true) // Enable the uBit LED display again
-
-        // If the toggle check does not identify the board as V1.3, there needs to be a check between V1.0 and V3.1
-        // Attempting to write/read a register on the PCA9632 IC will identify whether the IC is there or not (no PCA9632 on V3.1)
-        // Note: This check relies on the micro:bit not throwing an error when an I2C address is used which isn't present on the I2C bus
-        if (moveMotorVersion == 0) {
-            buf[0] = MODE_2_REG_ADDR
-            buf[1] = MODE_2_REG_VALUE
-            pins.i2cWriteBuffer(CHIP_ADDR, buf, false)
-            readBuf = pins.i2cReadBuffer(CHIP_ADDR, 1, false)
-            let readValue = readBuf[0]
-
-            if (readValue != MODE_2_REG_VALUE) {
-                moveMotorVersion = 31
-            }
-            else {
-                moveMotorVersion = 10
-            }
-        }
-        
-        //If version number is 1.0 (10) run the equalise sensor code
-        if (moveMotorVersion == 10){
-            equaliseSensorOffsets()
-        }
-        
-        //determine which version of microbit is being used. From this the correct value is used in the equation to convert pulse to distance
-        //uBitVersion = hardwareVersion()
-        let sizeOfRam = control.ramSize()
-        if (sizeOfRam >= 100000)
+	m_version=31;
+        //determine the version of microbit based on the ram size 
+	let Ram = control.ramSize()
+        if (Ram >= 100000)
         {
-            cmEquationDivider = ULTRASONIC_V2_DIV_CM
-            inEquationDivider = ULTRASONIC_V2_DIV_IN
+            cmDivider = ULTRASONIC_V2_DIV_CM
+            inDivider = ULTRASONIC_V2_DIV_IN
         }
         else
         {
-            cmEquationDivider = ULTRASONIC_V1_DIV_CM
-            inEquationDivider = ULTRASONIC_V1_DIV_IN
+            cmDivider = ULTRASONIC_V1_DIV_CM
+            intrDivider = ULTRASONIC_V1_DIV_IN
         }
         pins.digitalWritePin(DigitalPin.P13, 0) //set the ultrasonic pin low ready to trigger
         pins.digitalWritePin(DigitalPin.P14, 0) //set the ultrasonic pin low ready for return pulse
-
-        // Setup the PCA9632 IC if NOT Version 3.1
-        if (moveMotorVersion != 31) {
-            buf[0] = MODE_2_REG_ADDR
-            buf[1] = MODE_2_REG_VALUE
-            pins.i2cWriteBuffer(CHIP_ADDR, buf, false)
-            buf[0] = MOTOR_OUT_ADDR
-            buf[1] = MOTOR_OUT_VALUE
-            pins.i2cWriteBuffer(CHIP_ADDR, buf, false)
-            buf[0] = MODE_1_REG_ADDR
-            buf[1] = MODE_1_REG_VALUE
-            pins.i2cWriteBuffer(CHIP_ADDR, buf, false)
-            basic.pause(1)
-        }
-
-        initalised = true // We have setup, so don't come in here again.
+        init = true 
     }
 
     //////////////
@@ -262,8 +199,8 @@ namespace Kitronik_Move_Motor {
      * Turn off the brake lights.
      */
     //% subcategory="Lights"
-    //% blockId="kitronik_move_motor_brake_light_off"
-    //% block="turn off brake lights"
+    //% blockId="betaelectronix_brake_light_off"
+    //% block="brake lights off"
     //% weight=100 blockGap=8
     export function brakeLightsOff(): void {
         let brakeBuf = pins.createBuffer(6) // WS2811 ICs, each with RGB (RG = Motor, B = Brake)
